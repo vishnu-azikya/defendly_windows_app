@@ -1,0 +1,15 @@
+{
+  "react-native.packager.port": 8081,
+  "react-native.packager.statusBar.enabled": true,
+  "files.exclude": {
+    "**/.git": true,
+    "**/.DS_Store": true,
+    "**/node_modules": false
+  },
+  "search.exclude": {
+    "**/node_modules": true,
+    "**/windows/x64": true,
+    "**/windows/obj": true
+  }
+}
+
