@@ -42,11 +42,11 @@ const Sidebar = ({ onNavigate, currentRoute = "" }) => {
   ];
 
 
-  const documentationItem = {
-    label: "Documentation",
-    path: "Documentation",
-    icon: require("../../images/documentation.png"),
-  };
+  // const documentationItem = {
+  //   label: "Documentation",
+  //   path: "Documentation",
+  //   icon: require("../../images/documentation.png"),
+  // };
 
   const handleNavigate = (path) => {
     if (typeof onNavigate === "function") {
@@ -76,14 +76,14 @@ const Sidebar = ({ onNavigate, currentRoute = "" }) => {
       </View>
 
       {/* Bottom Documentation Item */}
-      <View style={styles.bottomSection}>
+      {/* <View style={styles.bottomSection}>
         <MenuItem
           item={documentationItem}
           active={currentRoute === documentationItem.path}
           expanded={expanded}
           onPress={() => handleNavigate(documentationItem.path)}
         />
-      </View>
+      </View> */}
     </Animated.View>
   );
 };

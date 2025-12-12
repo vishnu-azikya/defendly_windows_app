@@ -9,7 +9,7 @@
   <Identity
     Name="379d08cb-433d-4c3e-9d8b-1909ca59b4c0"
     Publisher="CN=Ashutosh"
-    Version="1.0.0.0" />
+    Version="1.0.1.0" />
 
   <mp:PhoneIdentity PhoneProductId="379d08cb-433d-4c3e-9d8b-1909ca59b4c0" PhonePublisherId="00000000-0000-0000-0000-000000000000"/>
 

@@ -25,6 +25,10 @@ import AdditionalMetrics from '../images/AdditionalMetrics.png';
 import Vulnerabilities from '../images/Vulnerabilities.png';
 import scanIcon from '../images/scanIcon.png';
 import { downloadDetailedReport } from '../utils/reportDownload';
+import {
+	buildSingleComprehensiveCsvReport,
+	downloadComprehensiveCsvReport,
+} from '../utils/csvReport';
 
 const PAGE_SIZE = 10;
 const WINDOW = Dimensions.get('window');
@@ -1030,68 +1034,112 @@ export default function AssessmentCenter({ onNavigate }) {
 		try {
 			console.log(`Preparing to download report for scan ${scan.scanId || scan.id}...`);
 
-			// Map the scan data to match the expected report format
-			// Spread scan properties and details to top level (matching web version)
+			// Get the scan ID
+			const scanId = scan.id || scan.scanId?.replace('#', '') || scan._id || scan.scan_id;
+			
+			if (!scanId) {
+				throw new Error('Scan ID not found');
+			}
+
+			// Fetch the complete original scan data from API (matching website version)
+			// This ensures we have all the data, not just the mapped row object
+			let fullScanData = null;
+			
+			// First, try to use cached detailed scan data if available
+			if (expandedScanDetails[scanId]) {
+				fullScanData = expandedScanDetails[scanId];
+				console.log('Using cached detailed scan data for download');
+			} else {
+				// Fetch fresh data from API
+				console.log('Fetching complete scan data from API for download...');
+				fullScanData = await getScanById(scanId);
+				console.log('Fetched scan data:', fullScanData ? 'Success' : 'Failed');
+			}
+
+			// Fallback to originalScan if available, otherwise use the scan object
+			const scanToDownload = fullScanData || scan.originalScan || scan;
+
+			// Log the data structure for debugging
+			console.log('Scan data structure for PDF:', {
+				hasFullScan: !!fullScanData,
+				hasOriginalScan: !!scan.originalScan,
+				keys: Object.keys(scanToDownload),
+				hasDetails: !!scanToDownload.details,
+				detailsKeys: scanToDownload.details ? Object.keys(scanToDownload.details) : [],
+			});
+
+			// Spread scan properties and details to top level (matching web version exactly)
 			const reportData = {
-				// Core scan properties
-				id: scan.id || scan.scanId?.replace('#', '') || Date.now(),
-				scan_id: scan.id || scan.scanId?.replace('#', ''),
-				_id: scan.id || scan.scanId?.replace('#', ''),
-				asset: scan.scanTarget || scan.target || '—',
-				scanTarget: scan.scanTarget || scan.target || '—',
-				project: scan.targetName || scan.projectName || scan.label || '—',
-				projectName: scan.targetName || scan.projectName || scan.label || '—',
-				organization: scan.organization || '—',
-				status: scan.status || '—',
-				type: scan.type || 'AI Scan',
-				description: scan.description || `Security assessment for ${scan.scanTarget || 'target'}`,
-				
-				// Date properties
-				startDate: scan.scanStart || scan.startDate || '—',
-				startTime: scan.scanStart || scan.startTime || '—',
-				endDate: scan.scanEnd || scan.endDate || '—',
-				endTime: scan.scanEnd || scan.endTime || '—',
-				scanStart: scan.scanStart || '—',
-				scanEnd: scan.scanEnd || '—',
-				
-				// Spread all details properties to top level (matching web version)
-				vulnerabilities: scan.details?.vulnerabilities || 0,
-				alerts: scan.details?.alerts || [],
-				endpoints: scan.details?.endpoints,
-				openPorts: scan.details?.openPorts || 0,
-				severity: scan.details?.severity || {
-					critical: 0,
-					high: 0,
-					medium: 0,
-					low: 0,
-					info: 0,
-				},
-				cyber_hygiene_score: scan.details?.cyber_hygiene_score,
-				threat_intelligence: scan.details?.threat_intelligence,
-				compliance_readiness: scan.details?.compliance_readiness,
-				security_misconfigurations: scan.details?.security_misconfigurations,
-				attack_surface_index: scan.details?.attack_surface_index,
-				vendor_risk_rating: scan.details?.vendor_risk_rating,
+				...scanToDownload, // Copies id, asset, project, etc. from original API response
+				...scanToDownload.details, // Spreads all properties from 'details' into the top level
 			};
 
 			// Create filename similar to web version
-			const projectName = (scan.targetName || scan.projectName || scan.label || 'Unknown').replace(/ /g, '_');
-			const scanId = scan.id || scan.scanId?.replace('#', '') || Date.now();
+			const projectName = (scanToDownload.project || scanToDownload.projectName || scanToDownload.targetName || scan.targetName || 'Unknown').replace(/ /g, '_');
 			const fileName = `Defendly_Report_${projectName}_${scanId}.pdf`;
 
-			// Call downloadDetailedReport (matching web version)
+			console.log('Calling downloadDetailedReport with reportData...');
 			await downloadDetailedReport(reportData, fileName);
 
-			console.log(`Download for scan ${scan.scanId || scan.id} initiated successfully.`);
+			console.log(`Download for scan ${scanId} initiated successfully.`);
 		} catch (error) {
 			console.error('Failed to generate or download the report:', error);
 			Alert.alert(
 				'Download Failed',
-				'Sorry, the report could not be downloaded. Please check the console for errors.',
+				`Sorry, the report could not be downloaded.\n\n${error.message || 'Please check the console for errors.'}`,
 				[{ text: 'OK' }]
 			);
 		}
-	}, []);
+	}, [expandedScanDetails]);
+
+	// CSV download (uses full scan data, same as web)
+	const handleDownloadCSV = useCallback(async (scan) => {
+		if (!scan) {
+			console.error('No scan data provided for CSV download');
+			Alert.alert('Error', 'An error occurred: No scan data available.');
+			return;
+		}
+
+		try {
+			console.log(`Preparing to download CSV for scan ${scan.scanId || scan.id}...`);
+
+			const scanId = scan.id || scan.scanId?.replace('#', '') || scan._id || scan.scan_id;
+			if (!scanId) throw new Error('Scan ID not found');
+
+			let fullScanData = null;
+			if (expandedScanDetails[scanId]) {
+				fullScanData = expandedScanDetails[scanId];
+				console.log('Using cached detailed scan data for CSV');
+			} else {
+				console.log('Fetching complete scan data from API for CSV...');
+				fullScanData = await getScanById(scanId);
+				console.log('Fetched scan data for CSV:', fullScanData ? 'Success' : 'Failed');
+			}
+
+			const scanToDownload = fullScanData || scan.originalScan || scan;
+
+			const csvContent = buildSingleComprehensiveCsvReport(scanToDownload);
+
+			const projectName =
+				(scanToDownload.project ||
+					scanToDownload.projectName ||
+					scanToDownload.targetName ||
+					scan.targetName ||
+					'Unknown').replace(/ /g, '_');
+			const fileName = `Defendly_Report_${projectName}_${scanId}.csv`;
+
+			downloadComprehensiveCsvReport(csvContent, fileName);
+
+			console.log(`CSV download for scan ${scanId} initiated successfully.`);
+		} catch (error) {
+			console.error('Failed to generate or download the CSV report:', error);
+			Alert.alert(
+				'Download Failed',
+				`Sorry, the CSV report could not be downloaded.\n\n${error.message || 'Please check the console for errors.'}`,
+				[{ text: 'OK' }]
+			);
+		}
+	}, [expandedScanDetails]);
 
 	console.log('paginatedScans---->', paginatedScans);
         // ---- position for global action menu ----
@@ -1321,7 +1369,7 @@ export default function AssessmentCenter({ onNavigate }) {
                         ↓ Download Pdf
                     </Text>
                     </Pressable>
-                     <Pressable
+                    <Pressable
                     style={[
                         styles.globalMenuItem,
                         styles.globalMenuItemLast,
@@ -1332,7 +1380,7 @@ export default function AssessmentCenter({ onNavigate }) {
                     onPress={() => {
                         if (!isScanCompleted(actionMenuState.scan)) return;
                         closeActionMenu();
-                        handleDownload(actionMenuState.scan);
+                        handleDownloadCSV(actionMenuState.scan);
                     }}
                     >
                     <Text

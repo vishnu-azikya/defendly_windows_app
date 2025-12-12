@@ -109,6 +109,7 @@
       <SubType>Code</SubType>
     </ClInclude>
     <ClInclude Include="ReactPackageProvider.h" />
+    <ClInclude Include="FileSaveModule.h" />
     <ClInclude Include="AutolinkedNativeModules.g.h" />
     <ClInclude Include="pch.h" />
     <ClInclude Include="App.h">

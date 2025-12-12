@@ -1,12 +1,123 @@
-import { Alert } from 'react-native';
+import { Alert, Platform, NativeModules } from 'react-native';
+import { generateDetailedReportPDF } from './pdfGenerator';
+
+// For Windows, react-native-fs is not properly supported
+// We'll check the platform and only try to use it on non-Windows platforms
+// On Windows, we'll use an alternative method
+const getRNFS = () => {
+    // On Windows, react-native-fs causes crashes, so skip it entirely
+    if (Platform.OS === 'windows') {
+        return null;
+    }
+    
+    // For other platforms, try to require react-native-fs
+    try {
+        const RNFS = require('react-native-fs');
+        // Verify it's actually working
+        if (RNFS && typeof RNFS.DocumentDirectoryPath !== 'undefined') {
+            return RNFS;
+        }
+    } catch (e) {
+        // Module not available or not linked
+        console.warn('react-native-fs not available:', e.message);
+    }
+    
+    return null;
+};
+
+/**
+ * Helper function to convert Uint8Array to base64
+ */
+const uint8ArrayToBase64 = (uint8Array) => {
+    let binary = '';
+    const len = uint8Array.byteLength;
+    for (let i = 0; i < len; i++) {
+        binary += String.fromCharCode(uint8Array[i]);
+    }
+    // Manual base64 encoding (works in all React Native environments)
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+    let result = '';
+    let i = 0;
+    while (i < binary.length) {
+        const a = binary.charCodeAt(i++);
+        const b = i < binary.length ? binary.charCodeAt(i++) : 0;
+        const c = i < binary.length ? binary.charCodeAt(i++) : 0;
+        const bitmap = (a << 16) | (b << 8) | c;
+        result += chars.charAt((bitmap >> 18) & 63);
+        result += chars.charAt((bitmap >> 12) & 63);
+        result += i - 2 < binary.length ? chars.charAt((bitmap >> 6) & 63) : '=';
+        result += i - 1 < binary.length ? chars.charAt(bitmap & 63) : '=';
+    }
+    return result;
+};
+
+/**
+ * Windows-specific file save using Windows.Storage APIs through native module
+ */
+const saveFileWindows = async (pdfBytes, fileName) => {
+    debugger;
+    try {
+        // Convert PDF bytes to base64
+        const base64String = uint8ArrayToBase64(pdfBytes);
+        
+        // Try to use native module for file saving
+        try {
+            const { FileSaveModule } = NativeModules;
+            if (FileSaveModule && FileSaveModule.saveFile) {
+                console.log('Using native FileSaveModule to save file...');
+                const filePath = await FileSaveModule.saveFile(base64String, fileName);
+                
+                // Check if result is an error (prefixed with "ERROR:")
+                if (filePath && filePath.startsWith('ERROR:')) {
+                    const errorMsg = filePath.substring(6); // Remove "ERROR:" prefix
+                    throw new Error(errorMsg);
+                }
+                
+                if (filePath && !filePath.includes('Error')) {
+                    console.log(`File saved successfully to: ${filePath}`);
+                    return {
+                        success: true,
+                        fileName: fileName,
+                        filePath: filePath,
+                        size: pdfBytes.length,
+                        method: 'native_module'
+                    };
+                } else {
+                    throw new Error(filePath || 'Unknown error from native module');
+                }
+            }
+        } catch (nativeError) {
+            console.warn('Native module not available, using fallback:', nativeError.message);
+        }
+        
+        // Fallback: Store in AsyncStorage if native module fails
+        try {
+            const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+            if (AsyncStorage) {
+                const key = `pdf_${Date.now()}_${fileName}`;
+                await AsyncStorage.setItem(key, base64String);
+                console.log(`PDF data stored temporarily with key: ${key}`);
+                
+                await AsyncStorage.setItem(`${key}_metadata`, JSON.stringify({
+                    fileName: fileName,
+                    size: pdfBytes.length,
+                    timestamp: new Date().toISOString(),
+                }));
+            }
+        } catch (storageError) {
+            console.warn('Could not store PDF in AsyncStorage:', storageError);
+        }
+        
+        throw new Error('Native file save module not available. PDF data stored temporarily in AsyncStorage.');
+    } catch (error) {
+        console.error('Windows file save error:', error);
+        throw error;
+    }
+};
 
 /**
  * Downloads a detailed report for a scan
- * NOTE: React Native Windows cannot use @react-pdf/renderer (web version's library)
- * because it requires Node.js modules that aren't available in React Native.
- * 
- * This function prepares the report data exactly like the web version,
- * but PDF generation requires a compatible library or backend service.
+ * Uses pdf-lib to generate PDFs compatible with React Native Windows
  * 
  * @param {Object} reportData - The scan data with details spread to top level
  * @param {string} fileName - The filename for the downloaded report
@@ -24,75 +135,97 @@ export const downloadDetailedReport = async (reportData, fileName = 'Defendly_De
             throw new Error('Scan ID not found in report data');
         }
 
-        // The web version does this:
-        // const blob = await getDetailedReportBlob(reportData, options);
-        // const url = URL.createObjectURL(blob);
-        // const a = document.createElement("a");
-        // a.href = url;
-        // a.download = fileName;
-        // document.body.appendChild(a);
-        // a.click();
-        // URL.revokeObjectURL(url);
-        // a.remove();
-        
-        // For React Native Windows, @react-pdf/renderer is not compatible
-        // because it requires Node.js modules (yoga-layout/load) that aren't available
-        
-        // Prepare report summary (matching web version's data structure)
-        const reportSummary = {
-            scanId: scanId,
-            fileName: fileName,
-            target: reportData.asset || reportData.scanTarget || 'N/A',
-            project: reportData.project || reportData.targetName || 'N/A',
-            organization: reportData.organization || 'N/A',
-            status: reportData.status || 'N/A',
-            vulnerabilities: reportData.vulnerabilities || 0,
-            severity: reportData.severity || {
-                critical: 0,
-                high: 0,
-                medium: 0,
-                low: 0,
-                info: 0,
-            },
-            scanStart: reportData.startDate || reportData.scanStart || 'N/A',
-            scanEnd: reportData.endDate || reportData.scanEnd || 'N/A',
-            // Include all metrics (matching web version)
-            cyber_hygiene_score: reportData.cyber_hygiene_score,
-            threat_intelligence: reportData.threat_intelligence,
-            compliance_readiness: reportData.compliance_readiness,
-            security_misconfigurations: reportData.security_misconfigurations,
-            attack_surface_index: reportData.attack_surface_index,
-            vendor_risk_rating: reportData.vendor_risk_rating,
-            alerts: reportData.alerts || [],
-            endpoints: reportData.endpoints,
-        };
+        // Generate PDF bytes using pdf-lib
+        console.log('Generating PDF...');
+        const pdfBytes = await generateDetailedReportPDF(reportData, {
+            ...options,
+            generatedAt: options.generatedAt || new Date(),
+            organizationName: options.organizationName || reportData.organization,
+            targetName: options.targetName || reportData.project || reportData.targetName,
+            targetUrl: options.targetUrl || reportData.asset || reportData.scanTarget,
+        });
 
-        console.log('Report data prepared (matching web version structure):', reportSummary);
-        
-        // Show informative message
-        Alert.alert(
-            'PDF Generation Limitation',
-            `The web version generates PDFs client-side using @react-pdf/renderer, ` +
-            `which is not compatible with React Native Windows.\n\n` +
-            `Report data has been prepared successfully:\n` +
-            `• Scan ID: ${scanId}\n` +
-            `• Target: ${reportSummary.target}\n` +
-            `• Vulnerabilities: ${reportSummary.vulnerabilities}\n` +
-            `• File name: ${fileName}\n\n` +
-            `To enable PDF downloads, you can:\n` +
-            `1. Use a backend API endpoint to generate PDFs\n` +
-            `2. Use a React Native-compatible PDF library\n` +
-            `3. Export the data as JSON for external processing`,
-            [
-                { text: 'OK', style: 'default' },
-            ]
-        );
+        console.log(`PDF generated successfully. Size: ${pdfBytes.length} bytes`);
+
+        // Handle file saving based on platform and available libraries
+        const fs = getRNFS();
+        if (Platform.OS === 'windows' || !fs) {
+            // Windows without react-native-fs - use alternative method
+            const result = await saveFileWindows(pdfBytes, fileName);
+            
+            // Show success or error message based on result
+            debugger;
+            if (result.success && result.filePath) {
+                Alert.alert(
+                    'PDF Downloaded Successfully',
+                    `Report has been saved successfully!\n\n` +
+                    `File: ${fileName}\n` +
+                    `Size: ${(pdfBytes.length / 1024).toFixed(2)} KB\n` +
+                    `Location: ${result.filePath}\n\n` +
+                    `Scan ID: ${scanId}`,
+                    [
+                        { text: 'OK', style: 'default' },
+                    ]
+                );
+            } else {
+                Alert.alert(
+                    'PDF Generated',
+                    `PDF report has been generated!\n\n` +
+                    `File: ${fileName}\n` +
+                    `Size: ${(pdfBytes.length / 1024).toFixed(2)} KB\n\n` +
+                    `The PDF data has been prepared and stored temporarily.\n` +
+                    `Check the console for details.\n\n` +
+                    `Scan ID: ${scanId}`,
+                    [
+                        { text: 'OK', style: 'default' },
+                    ]
+                );
+            }
+            
+            return result;
+        } else if (fs) {
+            // Use react-native-fs if available
+            let filePath;
+            try {
+                if (Platform.OS === 'windows') {
+                    const downloadsPath = fs.DownloadDirectoryPath || fs.DocumentDirectoryPath;
+                    filePath = `${downloadsPath}/${fileName}`;
+                } else {
+                    filePath = `${fs.DocumentDirectoryPath}/${fileName}`;
+                }
+            } catch (e) {
+                filePath = `${fs.DocumentDirectoryPath}/${fileName}`;
+            }
+
+            const base64String = uint8ArrayToBase64(pdfBytes);
+            
+            console.log(`Saving PDF to: ${filePath}`);
+            await fs.writeFile(filePath, base64String, 'base64');
+
+            console.log(`PDF saved successfully to: ${filePath}`);
+            
+            Alert.alert(
+                'PDF Downloaded',
+                `Report has been saved successfully!\n\n` +
+                `File: ${fileName}\n` +
+                `Location: ${filePath}\n\n` +
+                `Scan ID: ${scanId}`,
+                [
+                    { text: 'OK', style: 'default' },
+                ]
+            );
+
+            return filePath;
+        } else {
+            // Fallback for other platforms without react-native-fs
+            throw new Error('File system access not available on this platform');
+        }
         
     } catch (error) {
-        console.error('Failed to prepare report:', error);
+        console.error('Failed to generate or download the report:', error);
         Alert.alert(
-            'Error',
-            `Failed to prepare report data.\n\n${error.message || 'Please check the console for errors.'}`,
+            'Download Failed',
+            `Sorry, the report could not be downloaded.\n\n${error.message || 'Please check the console for errors.'}`,
             [{ text: 'OK' }]
         );
         throw error;
