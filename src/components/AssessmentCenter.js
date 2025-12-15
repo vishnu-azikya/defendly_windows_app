@@ -24,7 +24,7 @@ import summary from '../images/summary.png';
 import AdditionalMetrics from '../images/AdditionalMetrics.png';
 import Vulnerabilities from '../images/Vulnerabilities.png';
 import scanIcon from '../images/scanIcon.png';
-import { downloadDetailedReport } from '../utils/reportDownload';
+import { downloadPdfReportFromApi } from '../utils/reportDownload';
 import {
 	buildSingleComprehensiveCsvReport,
 	downloadComprehensiveCsvReport,
@@ -657,6 +657,7 @@ export default function AssessmentCenter({ onNavigate }) {
 	const [activePollingScanIds, setActivePollingScanIds] = useState(new Set());
 	const [pollingIntervals, setPollingIntervals] = useState(new Map());
 	const [localScans, setLocalScans] = useState([]); // Store locally created scans
+	const [downloadingPdfId, setDownloadingPdfId] = useState(null); // Track active PDF download
 
     	// Global action menu (dropdown) state
 	const [actionMenuState, setActionMenuState] = useState({
@@ -1032,7 +1033,7 @@ export default function AssessmentCenter({ onNavigate }) {
 		}
 
 		try {
-			console.log(`Preparing to download report for scan ${scan.scanId || scan.id}...`);
+			console.log(`Preparing to download PDF report for scan ${scan.scanId || scan.id}...`);
 
 			// Get the scan ID
 			const scanId = scan.id || scan.scanId?.replace('#', '') || scan._id || scan.scan_id;
@@ -1041,47 +1042,12 @@ export default function AssessmentCenter({ onNavigate }) {
 				throw new Error('Scan ID not found');
 			}
 
-			// Fetch the complete original scan data from API (matching website version)
-			// This ensures we have all the data, not just the mapped row object
-			let fullScanData = null;
-			
-			// First, try to use cached detailed scan data if available
-			if (expandedScanDetails[scanId]) {
-				fullScanData = expandedScanDetails[scanId];
-				console.log('Using cached detailed scan data for download');
-			} else {
-				// Fetch fresh data from API
-				console.log('Fetching complete scan data from API for download...');
-				fullScanData = await getScanById(scanId);
-				console.log('Fetched scan data:', fullScanData ? 'Success' : 'Failed');
-			}
+			// Download PDF directly from backend API
+			console.log(`Downloading PDF report from API for scan: ${scanId}`);
+			setDownloadingPdfId(scanId);
+			await downloadPdfReportFromApi(scanId);
 
-			// Fallback to originalScan if available, otherwise use the scan object
-			const scanToDownload = fullScanData || scan.originalScan || scan;
-
-			// Log the data structure for debugging
-			console.log('Scan data structure for PDF:', {
-				hasFullScan: !!fullScanData,
-				hasOriginalScan: !!scan.originalScan,
-				keys: Object.keys(scanToDownload),
-				hasDetails: !!scanToDownload.details,
-				detailsKeys: scanToDownload.details ? Object.keys(scanToDownload.details) : [],
-			});
-
-			// Spread scan properties and details to top level (matching web version exactly)
-			const reportData = {
-				...scanToDownload, // Copies id, asset, project, etc. from original API response
-				...scanToDownload.details, // Spreads all properties from 'details' into the top level
-			};
-
-			// Create filename similar to web version
-			const projectName = (scanToDownload.project || scanToDownload.projectName || scanToDownload.targetName || scan.targetName || 'Unknown').replace(/ /g, '_');
-			const fileName = `Defendly_Report_${projectName}_${scanId}.pdf`;
-
-			console.log('Calling downloadDetailedReport with reportData...');
-			await downloadDetailedReport(reportData, fileName);
-
-			console.log(`Download for scan ${scanId} initiated successfully.`);
+			console.log(`PDF download for scan ${scanId} completed successfully.`);
 		} catch (error) {
 			console.error('Failed to generate or download the report:', error);
 			Alert.alert(
@@ -1089,8 +1055,10 @@ export default function AssessmentCenter({ onNavigate }) {
 				`Sorry, the report could not be downloaded.\n\n${error.message || 'Please check the console for errors.'}`,
 				[{ text: 'OK' }]
 			);
+		} finally {
+			setDownloadingPdfId(null);
 		}
-	}, [expandedScanDetails]);
+	}, []);
 
 	// CSV download (uses full scan data, same as web)
 	const handleDownloadCSV = useCallback(async (scan) => {
@@ -1398,6 +1366,18 @@ export default function AssessmentCenter({ onNavigate }) {
                 </Pressable>
             )}
 
+			{/* Downloading overlay */}
+			{downloadingPdfId && (
+				<View style={styles.downloadOverlay}>
+					<View style={styles.downloadOverlayCard}>
+						<ActivityIndicator color="#2563EB" size="large" />
+						<Text style={styles.downloadOverlayText}>
+							Downloading PDF report...
+						</Text>
+					</View>
+				</View>
+			)}
+
 		</View>
 	);
 }
@@ -1651,5 +1631,33 @@ const styles = StyleSheet.create({
 
 	globalMenuItemTextDisabled: {
 		color: '#9CA3AF',
+	},
+
+	downloadOverlay: {
+		position: 'absolute',
+		top: 0,
+		left: 0,
+		right: 0,
+		bottom: 0,
+		backgroundColor: 'rgba(255,255,255,0.6)',
+		alignItems: 'center',
+		justifyContent: 'center',
+		zIndex: 10000,
+	},
+	downloadOverlayCard: {
+		backgroundColor: '#fff',
+		padding: 16,
+		borderRadius: 12,
+		borderWidth: 1,
+		borderColor: '#E5E7EB',
+		alignItems: 'center',
+		width: 220,
+	},
+	downloadOverlayText: {
+		marginTop: 10,
+		color: '#374151',
+		fontSize: 14,
+		fontWeight: '600',
+		textAlign: 'center',
 	},
 });

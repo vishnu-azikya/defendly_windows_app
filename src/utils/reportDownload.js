@@ -54,7 +54,7 @@ const uint8ArrayToBase64 = (uint8Array) => {
 /**
  * Windows-specific file save using Windows.Storage APIs through native module
  */
-const saveFileWindows = async (pdfBytes, fileName) => {
+export const saveFileWindows = async (pdfBytes, fileName) => {
     debugger;
     try {
         // Convert PDF bytes to base64
@@ -223,6 +223,116 @@ export const downloadDetailedReport = async (reportData, fileName = 'Defendly_De
         
     } catch (error) {
         console.error('Failed to generate or download the report:', error);
+        Alert.alert(
+            'Download Failed',
+            `Sorry, the report could not be downloaded.\n\n${error.message || 'Please check the console for errors.'}`,
+            [{ text: 'OK' }]
+        );
+        throw error;
+    }
+};
+
+/**
+ * Downloads PDF report from backend API and saves it
+ * @param {string} scanId - The scan ID to download PDF for
+ * @param {string} fileName - Optional filename (will be generated if not provided)
+ */
+export const downloadPdfReportFromApi = async (scanId, fileName = null) => {
+    try {
+        if (!scanId) {
+            throw new Error('Scan ID is required');
+        }
+
+        console.log(`Downloading PDF report from API for scan: ${scanId}`);
+        
+        // Import scanService dynamically to avoid circular dependency
+        const { downloadPdfReport } = require('../services/scanService');
+        
+        // Download PDF bytes from API
+        const pdfBytes = await downloadPdfReport(scanId);
+        
+        // Generate filename if not provided
+        if (!fileName) {
+            fileName = `vulnerability-assessment-report-${scanId}.pdf`;
+        }
+        
+        console.log(`PDF downloaded, saving file: ${fileName}`);
+        
+        // Handle file saving based on platform
+        const fs = getRNFS();
+        if (Platform.OS === 'windows' || !fs) {
+            // Windows without react-native-fs - use alternative method
+            const result = await saveFileWindows(pdfBytes, fileName);
+            
+            // Show success or error message based on result
+            if (result.success && result.filePath) {
+                Alert.alert(
+                    'PDF Downloaded Successfully',
+                    `Report has been saved successfully!\n\n` +
+                    `File: ${fileName}\n` +
+                    `Size: ${(pdfBytes.length / 1024).toFixed(2)} KB\n` +
+                    `Location: ${result.filePath}\n\n` +
+                    `Scan ID: ${scanId}`,
+                    [
+                        { text: 'OK', style: 'default' },
+                    ]
+                );
+            } else {
+                Alert.alert(
+                    'PDF Generated',
+                    `PDF report has been generated!\n\n` +
+                    `File: ${fileName}\n` +
+                    `Size: ${(pdfBytes.length / 1024).toFixed(2)} KB\n\n` +
+                    `The PDF data has been prepared and stored temporarily.\n` +
+                    `Check the console for details.\n\n` +
+                    `Scan ID: ${scanId}`,
+                    [
+                        { text: 'OK', style: 'default' },
+                    ]
+                );
+            }
+            
+            return result;
+        } else if (fs) {
+            // Use react-native-fs if available
+            let filePath;
+            try {
+                if (Platform.OS === 'windows') {
+                    const downloadsPath = fs.DownloadDirectoryPath || fs.DocumentDirectoryPath;
+                    filePath = `${downloadsPath}/${fileName}`;
+                } else {
+                    filePath = `${fs.DocumentDirectoryPath}/${fileName}`;
+                }
+            } catch (e) {
+                filePath = `${fs.DocumentDirectoryPath}/${fileName}`;
+            }
+
+            const base64String = uint8ArrayToBase64(pdfBytes);
+            
+            console.log(`Saving PDF to: ${filePath}`);
+            await fs.writeFile(filePath, base64String, 'base64');
+
+            console.log(`PDF saved successfully to: ${filePath}`);
+            
+            Alert.alert(
+                'PDF Downloaded',
+                `Report has been saved successfully!\n\n` +
+                `File: ${fileName}\n` +
+                `Location: ${filePath}\n\n` +
+                `Scan ID: ${scanId}`,
+                [
+                    { text: 'OK', style: 'default' },
+                ]
+            );
+
+            return filePath;
+        } else {
+            // Fallback for other platforms without react-native-fs
+            throw new Error('File system access not available on this platform');
+        }
+        
+    } catch (error) {
+        console.error('Failed to download PDF report from API:', error);
         Alert.alert(
             'Download Failed',
             `Sorry, the report could not be downloaded.\n\n${error.message || 'Please check the console for errors.'}`,
