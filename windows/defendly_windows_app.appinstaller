@@ -1,48 +1,48 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <AppInstaller
 	Uri="file:///D:/project-2025/defendly_windows_app/windows/defendly_windows_app.appinstaller"
-	Version="1.0.1.0" xmlns="http://schemas.microsoft.com/appx/appinstaller/2017/2">
+	Version="1.0.0.0" xmlns="http://schemas.microsoft.com/appx/appinstaller/2017/2">
 	<MainBundle
 		Name="379d08cb-433d-4c3e-9d8b-1909ca59b4c0"
-		Version="1.0.1.0"
+		Version="1.0.0.0"
 		Publisher="CN=Ashutosh"
-		Uri="file:///D:/project-2025/defendly_windows_app/windows/defendly_windows_app_1.0.1.0_Test/defendly_windows_app_1.0.1.0_x86_x64.msixbundle" />
+		Uri="file:///D:/project-2025/defendly_windows_app/windows/defendly_windows_app_1.0.0.0_Test/defendly_windows_app_1.0.0.0_x86_x64.msixbundle" />
 	<Dependencies>
 		<Package
 			Name="Microsoft.UI.Xaml.2.8"
 			Publisher="CN=Microsoft Corporation, O=Microsoft Corporation, L=Redmond, S=Washington, C=US"
 			ProcessorArchitecture="x86"
-			Uri="file:///D:/project-2025/defendly_windows_app/windows/defendly_windows_app_1.0.1.0_Test/Dependencies/x86/Microsoft.UI.Xaml.2.8.appx"
+			Uri="file:///D:/project-2025/defendly_windows_app/windows/defendly_windows_app_1.0.0.0_Test/Dependencies/x86/Microsoft.UI.Xaml.2.8.appx"
 			Version="8.2207.14002.0" />
 		<Package
 			Name="Microsoft.UI.Xaml.2.8"
 			Publisher="CN=Microsoft Corporation, O=Microsoft Corporation, L=Redmond, S=Washington, C=US"
 			ProcessorArchitecture="x64"
-			Uri="file:///D:/project-2025/defendly_windows_app/windows/defendly_windows_app_1.0.1.0_Test/Dependencies/x64/Microsoft.UI.Xaml.2.8.appx"
+			Uri="file:///D:/project-2025/defendly_windows_app/windows/defendly_windows_app_1.0.0.0_Test/Dependencies/x64/Microsoft.UI.Xaml.2.8.appx"
 			Version="8.2207.14002.0" />
 		<Package
 			Name="Microsoft.VCLibs.140.00.UWPDesktop"
 			Publisher="CN=Microsoft Corporation, O=Microsoft Corporation, L=Redmond, S=Washington, C=US"
 			ProcessorArchitecture="x64"
-			Uri="file:///D:/project-2025/defendly_windows_app/windows/defendly_windows_app_1.0.1.0_Test/Dependencies/x64/Microsoft.VCLibs.x64.14.00.Desktop.appx"
+			Uri="file:///D:/project-2025/defendly_windows_app/windows/defendly_windows_app_1.0.0.0_Test/Dependencies/x64/Microsoft.VCLibs.x64.14.00.Desktop.appx"
 			Version="14.0.33728.0" />
 		<Package
 			Name="Microsoft.VCLibs.140.00.UWPDesktop"
 			Publisher="CN=Microsoft Corporation, O=Microsoft Corporation, L=Redmond, S=Washington, C=US"
 			ProcessorArchitecture="x86"
-			Uri="file:///D:/project-2025/defendly_windows_app/windows/defendly_windows_app_1.0.1.0_Test/Dependencies/x86/Microsoft.VCLibs.x86.14.00.Desktop.appx"
+			Uri="file:///D:/project-2025/defendly_windows_app/windows/defendly_windows_app_1.0.0.0_Test/Dependencies/x86/Microsoft.VCLibs.x86.14.00.Desktop.appx"
 			Version="14.0.33728.0" />
 		<Package
 			Name="Microsoft.VCLibs.140.00"
 			Publisher="CN=Microsoft Corporation, O=Microsoft Corporation, L=Redmond, S=Washington, C=US"
 			ProcessorArchitecture="x64"
-			Uri="file:///D:/project-2025/defendly_windows_app/windows/defendly_windows_app_1.0.1.0_Test/Dependencies/x64/Microsoft.VCLibs.x64.14.00.appx"
+			Uri="file:///D:/project-2025/defendly_windows_app/windows/defendly_windows_app_1.0.0.0_Test/Dependencies/x64/Microsoft.VCLibs.x64.14.00.appx"
 			Version="14.0.33519.0" />
 		<Package
 			Name="Microsoft.VCLibs.140.00"
 			Publisher="CN=Microsoft Corporation, O=Microsoft Corporation, L=Redmond, S=Washington, C=US"
 			ProcessorArchitecture="x86"
-			Uri="file:///D:/project-2025/defendly_windows_app/windows/defendly_windows_app_1.0.1.0_Test/Dependencies/x86/Microsoft.VCLibs.x86.14.00.appx"
+			Uri="file:///D:/project-2025/defendly_windows_app/windows/defendly_windows_app_1.0.0.0_Test/Dependencies/x86/Microsoft.VCLibs.x86.14.00.appx"
 			Version="14.0.33519.0" />
 	</Dependencies>
 	<UpdateSettings>

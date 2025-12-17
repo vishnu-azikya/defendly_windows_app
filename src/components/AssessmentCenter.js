@@ -14,6 +14,7 @@ import {
 	Alert,
     Dimensions,
 } from 'react-native';
+import Svg, { Circle, G } from 'react-native-svg';
 import useOrganization from '../hooks/useOrganization';
 import useAuth from '../hooks/useAuth';
 import scanService, { initiateScan, pollScanStatus, extractDomain, getScanById } from '../services/scanService';
@@ -51,6 +52,7 @@ const StatusPill = ({ status }) => {
 
 // Donut Chart Component for Vulnerabilities
 const DonutChart = ({ data, total }) => {
+	debugger;
 	if (total === 0) {
 		return (
 			<View style={styles.donutChartEmpty}>
@@ -59,9 +61,65 @@ const DonutChart = ({ data, total }) => {
 		);
 	}
 
+	const radius = 80;
+	const strokeWidth = 16;
+	const normalizedRadius = radius - strokeWidth * 2;
+	const circumference = normalizedRadius * 2 * Math.PI;
+	const size = radius * 2;
+
+	// Filter out zero values first
+	const filteredData = data.filter(item => item.value > 0);
+	
+	if (filteredData.length === 0) {
+		return (
+			<View style={styles.donutChartEmpty}>
+				<Text style={styles.donutEmptyText}>No data</Text>
+			</View>
+		);
+	}
+
+	// Calculate total from filtered data to ensure segments fill exactly 100%
+	const filteredTotal = filteredData.reduce((sum, item) => sum + item.value, 0);
+
+	let cumulativePercentage = 0;
+	debugger
 	return (
 		<View style={styles.donutContainer}>
-			<View style={styles.donutChart}>
+			<Svg width={size} height={size} style={styles.donutSvg}>
+				{/* Segments - only show non-zero values, rotate -90 degrees */}
+				<G transform={`translate(${radius}, ${radius}) rotate(-90)`}>
+					{filteredData.map((item, index) => {
+						// Calculate percentage based on filtered total so it adds up to 100%
+						const isLast = index === filteredData.length - 1;
+						// For the last segment, ensure it fills exactly to 100%
+						const percentage = isLast 
+							? 100 - cumulativePercentage 
+							: (item.value / filteredTotal) * 100;
+						
+						const strokeDasharray = `${(percentage / 100) * circumference} ${circumference}`;
+						const strokeDashoffset = -cumulativePercentage * (circumference / 100);
+
+						cumulativePercentage += percentage;
+
+						return (
+							<Circle
+								key={index}
+								stroke={item.color}
+								fill="transparent"
+								strokeWidth={strokeWidth}
+								strokeDasharray={strokeDasharray}
+								strokeDashoffset={strokeDashoffset}
+								r={normalizedRadius}
+								cx={0}
+								cy={0}
+							/>
+						);
+					})}
+				</G>
+			</Svg>
+			
+			{/* Total Count in center */}
+			<View style={styles.donutCenter}>
 				<Text style={styles.donutTotal}>{total}</Text>
 			</View>
 		</View>
@@ -83,12 +141,24 @@ const MetricCard = ({ label, value, unit }) => (
 );
 
 // Vulnerability Severity Box
-const SeverityBox = ({ label, count, color }) => (
-	<View style={[styles.severityBox, { borderColor: color }]}>
-		<Text style={styles.severityLabel}>{label}</Text>
-		<Text style={[styles.severityCount, { color }]}>{count}</Text>
-	</View>
-);
+const SeverityBox = ({ label, count, color }) => {
+	// Convert hex color to rgba with 50% opacity for border
+	const hexToRgba = (hex, alpha) => {
+		const r = parseInt(hex.slice(1, 3), 16);
+		const g = parseInt(hex.slice(3, 5), 16);
+		const b = parseInt(hex.slice(5, 7), 16);
+		return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+	};
+	
+	const borderColor = hexToRgba(color, 0.5);
+	
+	return (
+		<View style={[styles.severityBox, { borderColor }]}>
+			<Text style={styles.severityLabel}>{label}</Text>
+			<Text style={[styles.severityCount, { color }]}>{count}</Text>
+		</View>
+	);
+};
 
 // Calculate scan duration
 const calculateDuration = (startTime, endTime, scan) => {
@@ -1542,7 +1612,7 @@ const styles = StyleSheet.create({
 		paddingHorizontal: 12,
 		paddingVertical: 8,
 		borderRadius: 6,
-		borderWidth: 1,
+		borderWidth: 2,
 		flexShrink: 0,
 		minHeight: 40,
 		maxWidth: 120,
@@ -1555,29 +1625,42 @@ const styles = StyleSheet.create({
 	severityLabel: { fontSize: 12, color: '#374151', fontWeight: '500' },
 	severityCount: { fontSize: 16, fontWeight: '700' },
 
-	donutContainer: { alignItems: 'center', justifyContent: 'center' },
-	donutChart: {
-		width: 100,
-		height: 100,
-		borderRadius: 50,
-		backgroundColor: '#E5E7EB',
+	donutContainer: { 
+		width: 160, 
+		height: 160, 
+		alignItems: 'center', 
+		justifyContent: 'center',
+		position: 'relative',
+		marginLeft: 24,
+		flexShrink: 0,
+	},
+	donutSvg: {
+		position: 'absolute',
+	},
+	donutCenter: {
+		position: 'absolute',
 		alignItems: 'center',
 		justifyContent: 'center',
-		borderWidth: 8,
-		borderColor: '#F3F4F6',
+		width: 160,
+		height: 160,
 	},
-	donutTotal: { fontSize: 20, fontWeight: '700', color: '#111827' },
+	donutTotal: { 
+		fontSize: 24, 
+		fontWeight: '700', 
+		color: '#111827',
+		textAlign: 'center',
+	},
 	donutChartEmpty: {
-		width: 100,
-		height: 100,
-		borderRadius: 50,
+		width: 160,
+		height: 160,
+		borderRadius: 80,
 		backgroundColor: '#F3F4F6',
 		alignItems: 'center',
 		justifyContent: 'center',
 		borderWidth: 2,
 		borderColor: '#E5E7EB',
 	},
-	donutEmptyText: { fontSize: 10, color: '#6B7280' },
+	donutEmptyText: { fontSize: 12, color: '#9CA3AF', fontWeight: '500' },
 
 	// Additional Metrics styles
 	metricsGridCompact: {

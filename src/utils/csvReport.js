@@ -189,6 +189,7 @@ export const downloadComprehensiveCsvReport = async (csvContent, filename) => {
       return result;
     }
   } catch (err) {
+    console.warn('Native module not available, using fallback:', err.message);
     // Not in React Native environment or module missing; fall through to web
   }
 
