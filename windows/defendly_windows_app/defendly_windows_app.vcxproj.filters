@@ -11,6 +11,7 @@
     <ClCompile Include="App.cpp" />
     <ClCompile Include="$(GeneratedFilesDir)module.g.cpp" />
     <ClCompile Include="ReactPackageProvider.cpp" />
+    <ClCompile Include="FileSaveModule.cpp" />
     <ClCompile Include="AutolinkedNativeModules.g.cpp" />
   </ItemGroup>
   <ItemGroup>

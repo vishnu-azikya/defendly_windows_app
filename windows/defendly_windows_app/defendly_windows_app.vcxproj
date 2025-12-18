@@ -141,6 +141,10 @@
       <SubType>Code</SubType>
     </ClCompile>
     <ClCompile Include="ReactPackageProvider.cpp" />
+    <ClCompile Include="FileSaveModule.cpp">
+      <!-- Disable WholeProgramOptimization for this file to prevent module registration from being optimized away -->
+      <WholeProgramOptimization Condition="'$(Configuration)'=='Release'">false</WholeProgramOptimization>
+    </ClCompile>
     <ClCompile Include="AutolinkedNativeModules.g.cpp" />
     <ClCompile Include="pch.cpp">
       <PrecompiledHeader>Create</PrecompiledHeader>

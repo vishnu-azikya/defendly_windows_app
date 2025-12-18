@@ -1166,14 +1166,29 @@ export default function AssessmentCenter({ onNavigate }) {
 					'Unknown').replace(/ /g, '_');
 			const fileName = `Defendly_Report_${projectName}_${scanId}.csv`;
 
-			downloadComprehensiveCsvReport(csvContent, fileName);
-
-			console.log(`CSV download for scan ${scanId} initiated successfully.`);
+			// Await the download and handle the result
+			const result = await downloadComprehensiveCsvReport(csvContent, fileName);
+			
+			if (result && result.cancelled) {
+				console.log('User cancelled CSV download');
+				return;
+			}
+			
+			if (result && result.success) {
+				console.log(`CSV download for scan ${scanId} completed successfully. File saved to: ${result.filePath}`);
+				Alert.alert(
+					'Download Successful',
+					`CSV report saved successfully.\n\nFile: ${fileName}\nLocation: ${result.filePath || 'Downloads folder'}`,
+					[{ text: 'OK' }]
+				);
+			} else {
+				console.log(`CSV download for scan ${scanId} initiated.`);
+			}
 		} catch (error) {
 			console.error('Failed to generate or download the CSV report:', error);
 			Alert.alert(
 				'Download Failed',
-				`Sorry, the CSV report could not be downloaded.\n\n${error.message || 'Please check the console for errors.'}`,
+				`Sorry, the CSV report could not be downloaded.\n\n${error.message || 'Please check the console for errors.'}\n\nIf this issue persists, ensure the app has file system permissions.`,
 				[{ text: 'OK' }]
 			);
 		}
