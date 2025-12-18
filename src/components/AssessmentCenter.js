@@ -14,6 +14,7 @@ import {
 	Alert,
     Dimensions,
 } from 'react-native';
+import Svg, { Circle, G } from 'react-native-svg';
 import useOrganization from '../hooks/useOrganization';
 import useAuth from '../hooks/useAuth';
 import scanService, { initiateScan, pollScanStatus, extractDomain, getScanById } from '../services/scanService';
@@ -24,7 +25,7 @@ import summary from '../images/summary.png';
 import AdditionalMetrics from '../images/AdditionalMetrics.png';
 import Vulnerabilities from '../images/Vulnerabilities.png';
 import scanIcon from '../images/scanIcon.png';
-import { downloadDetailedReport } from '../utils/reportDownload';
+import { downloadPdfReportFromApi } from '../utils/reportDownload';
 import {
 	buildSingleComprehensiveCsvReport,
 	downloadComprehensiveCsvReport,
@@ -51,6 +52,7 @@ const StatusPill = ({ status }) => {
 
 // Donut Chart Component for Vulnerabilities
 const DonutChart = ({ data, total }) => {
+	debugger;
 	if (total === 0) {
 		return (
 			<View style={styles.donutChartEmpty}>
@@ -59,9 +61,65 @@ const DonutChart = ({ data, total }) => {
 		);
 	}
 
+	const radius = 80;
+	const strokeWidth = 16;
+	const normalizedRadius = radius - strokeWidth * 2;
+	const circumference = normalizedRadius * 2 * Math.PI;
+	const size = radius * 2;
+
+	// Filter out zero values first
+	const filteredData = data.filter(item => item.value > 0);
+	
+	if (filteredData.length === 0) {
+		return (
+			<View style={styles.donutChartEmpty}>
+				<Text style={styles.donutEmptyText}>No data</Text>
+			</View>
+		);
+	}
+
+	// Calculate total from filtered data to ensure segments fill exactly 100%
+	const filteredTotal = filteredData.reduce((sum, item) => sum + item.value, 0);
+
+	let cumulativePercentage = 0;
+	debugger
 	return (
 		<View style={styles.donutContainer}>
-			<View style={styles.donutChart}>
+			<Svg width={size} height={size} style={styles.donutSvg}>
+				{/* Segments - only show non-zero values, rotate -90 degrees */}
+				<G transform={`translate(${radius}, ${radius}) rotate(-90)`}>
+					{filteredData.map((item, index) => {
+						// Calculate percentage based on filtered total so it adds up to 100%
+						const isLast = index === filteredData.length - 1;
+						// For the last segment, ensure it fills exactly to 100%
+						const percentage = isLast 
+							? 100 - cumulativePercentage 
+							: (item.value / filteredTotal) * 100;
+						
+						const strokeDasharray = `${(percentage / 100) * circumference} ${circumference}`;
+						const strokeDashoffset = -cumulativePercentage * (circumference / 100);
+
+						cumulativePercentage += percentage;
+
+						return (
+							<Circle
+								key={index}
+								stroke={item.color}
+								fill="transparent"
+								strokeWidth={strokeWidth}
+								strokeDasharray={strokeDasharray}
+								strokeDashoffset={strokeDashoffset}
+								r={normalizedRadius}
+								cx={0}
+								cy={0}
+							/>
+						);
+					})}
+				</G>
+			</Svg>
+			
+			{/* Total Count in center */}
+			<View style={styles.donutCenter}>
 				<Text style={styles.donutTotal}>{total}</Text>
 			</View>
 		</View>
@@ -83,12 +141,24 @@ const MetricCard = ({ label, value, unit }) => (
 );
 
 // Vulnerability Severity Box
-const SeverityBox = ({ label, count, color }) => (
-	<View style={[styles.severityBox, { borderColor: color }]}>
-		<Text style={styles.severityLabel}>{label}</Text>
-		<Text style={[styles.severityCount, { color }]}>{count}</Text>
-	</View>
-);
+const SeverityBox = ({ label, count, color }) => {
+	// Convert hex color to rgba with 50% opacity for border
+	const hexToRgba = (hex, alpha) => {
+		const r = parseInt(hex.slice(1, 3), 16);
+		const g = parseInt(hex.slice(3, 5), 16);
+		const b = parseInt(hex.slice(5, 7), 16);
+		return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+	};
+	
+	const borderColor = hexToRgba(color, 0.5);
+	
+	return (
+		<View style={[styles.severityBox, { borderColor }]}>
+			<Text style={styles.severityLabel}>{label}</Text>
+			<Text style={[styles.severityCount, { color }]}>{count}</Text>
+		</View>
+	);
+};
 
 // Calculate scan duration
 const calculateDuration = (startTime, endTime, scan) => {
@@ -657,6 +727,7 @@ export default function AssessmentCenter({ onNavigate }) {
 	const [activePollingScanIds, setActivePollingScanIds] = useState(new Set());
 	const [pollingIntervals, setPollingIntervals] = useState(new Map());
 	const [localScans, setLocalScans] = useState([]); // Store locally created scans
+	const [downloadingPdfId, setDownloadingPdfId] = useState(null); // Track active PDF download
 
     	// Global action menu (dropdown) state
 	const [actionMenuState, setActionMenuState] = useState({
@@ -1032,7 +1103,7 @@ export default function AssessmentCenter({ onNavigate }) {
 		}
 
 		try {
-			console.log(`Preparing to download report for scan ${scan.scanId || scan.id}...`);
+			console.log(`Preparing to download PDF report for scan ${scan.scanId || scan.id}...`);
 
 			// Get the scan ID
 			const scanId = scan.id || scan.scanId?.replace('#', '') || scan._id || scan.scan_id;
@@ -1041,47 +1112,12 @@ export default function AssessmentCenter({ onNavigate }) {
 				throw new Error('Scan ID not found');
 			}
 
-			// Fetch the complete original scan data from API (matching website version)
-			// This ensures we have all the data, not just the mapped row object
-			let fullScanData = null;
-			
-			// First, try to use cached detailed scan data if available
-			if (expandedScanDetails[scanId]) {
-				fullScanData = expandedScanDetails[scanId];
-				console.log('Using cached detailed scan data for download');
-			} else {
-				// Fetch fresh data from API
-				console.log('Fetching complete scan data from API for download...');
-				fullScanData = await getScanById(scanId);
-				console.log('Fetched scan data:', fullScanData ? 'Success' : 'Failed');
-			}
+			// Download PDF directly from backend API
+			console.log(`Downloading PDF report from API for scan: ${scanId}`);
+			setDownloadingPdfId(scanId);
+			await downloadPdfReportFromApi(scanId);
 
-			// Fallback to originalScan if available, otherwise use the scan object
-			const scanToDownload = fullScanData || scan.originalScan || scan;
-
-			// Log the data structure for debugging
-			console.log('Scan data structure for PDF:', {
-				hasFullScan: !!fullScanData,
-				hasOriginalScan: !!scan.originalScan,
-				keys: Object.keys(scanToDownload),
-				hasDetails: !!scanToDownload.details,
-				detailsKeys: scanToDownload.details ? Object.keys(scanToDownload.details) : [],
-			});
-
-			// Spread scan properties and details to top level (matching web version exactly)
-			const reportData = {
-				...scanToDownload, // Copies id, asset, project, etc. from original API response
-				...scanToDownload.details, // Spreads all properties from 'details' into the top level
-			};
-
-			// Create filename similar to web version
-			const projectName = (scanToDownload.project || scanToDownload.projectName || scanToDownload.targetName || scan.targetName || 'Unknown').replace(/ /g, '_');
-			const fileName = `Defendly_Report_${projectName}_${scanId}.pdf`;
-
-			console.log('Calling downloadDetailedReport with reportData...');
-			await downloadDetailedReport(reportData, fileName);
-
-			console.log(`Download for scan ${scanId} initiated successfully.`);
+			console.log(`PDF download for scan ${scanId} completed successfully.`);
 		} catch (error) {
 			console.error('Failed to generate or download the report:', error);
 			Alert.alert(
@@ -1089,8 +1125,10 @@ export default function AssessmentCenter({ onNavigate }) {
 				`Sorry, the report could not be downloaded.\n\n${error.message || 'Please check the console for errors.'}`,
 				[{ text: 'OK' }]
 			);
+		} finally {
+			setDownloadingPdfId(null);
 		}
-	}, [expandedScanDetails]);
+	}, []);
 
 	// CSV download (uses full scan data, same as web)
 	const handleDownloadCSV = useCallback(async (scan) => {
@@ -1128,14 +1166,29 @@ export default function AssessmentCenter({ onNavigate }) {
 					'Unknown').replace(/ /g, '_');
 			const fileName = `Defendly_Report_${projectName}_${scanId}.csv`;
 
-			downloadComprehensiveCsvReport(csvContent, fileName);
-
-			console.log(`CSV download for scan ${scanId} initiated successfully.`);
+			// Await the download and handle the result
+			const result = await downloadComprehensiveCsvReport(csvContent, fileName);
+			
+			if (result && result.cancelled) {
+				console.log('User cancelled CSV download');
+				return;
+			}
+			
+			if (result && result.success) {
+				console.log(`CSV download for scan ${scanId} completed successfully. File saved to: ${result.filePath}`);
+				Alert.alert(
+					'Download Successful',
+					`CSV report saved successfully.\n\nFile: ${fileName}\nLocation: ${result.filePath || 'Downloads folder'}`,
+					[{ text: 'OK' }]
+				);
+			} else {
+				console.log(`CSV download for scan ${scanId} initiated.`);
+			}
 		} catch (error) {
 			console.error('Failed to generate or download the CSV report:', error);
 			Alert.alert(
 				'Download Failed',
-				`Sorry, the CSV report could not be downloaded.\n\n${error.message || 'Please check the console for errors.'}`,
+				`Sorry, the CSV report could not be downloaded.\n\n${error.message || 'Please check the console for errors.'}\n\nIf this issue persists, ensure the app has file system permissions.`,
 				[{ text: 'OK' }]
 			);
 		}
@@ -1398,6 +1451,18 @@ export default function AssessmentCenter({ onNavigate }) {
                 </Pressable>
             )}
 
+			{/* Downloading overlay */}
+			{downloadingPdfId && (
+				<View style={styles.downloadOverlay}>
+					<View style={styles.downloadOverlayCard}>
+						<ActivityIndicator color="#2563EB" size="large" />
+						<Text style={styles.downloadOverlayText}>
+							Downloading PDF report...
+						</Text>
+					</View>
+				</View>
+			)}
+
 		</View>
 	);
 }
@@ -1562,7 +1627,7 @@ const styles = StyleSheet.create({
 		paddingHorizontal: 12,
 		paddingVertical: 8,
 		borderRadius: 6,
-		borderWidth: 1,
+		borderWidth: 2,
 		flexShrink: 0,
 		minHeight: 40,
 		maxWidth: 120,
@@ -1575,29 +1640,42 @@ const styles = StyleSheet.create({
 	severityLabel: { fontSize: 12, color: '#374151', fontWeight: '500' },
 	severityCount: { fontSize: 16, fontWeight: '700' },
 
-	donutContainer: { alignItems: 'center', justifyContent: 'center' },
-	donutChart: {
-		width: 100,
-		height: 100,
-		borderRadius: 50,
-		backgroundColor: '#E5E7EB',
+	donutContainer: { 
+		width: 160, 
+		height: 160, 
+		alignItems: 'center', 
+		justifyContent: 'center',
+		position: 'relative',
+		marginLeft: 24,
+		flexShrink: 0,
+	},
+	donutSvg: {
+		position: 'absolute',
+	},
+	donutCenter: {
+		position: 'absolute',
 		alignItems: 'center',
 		justifyContent: 'center',
-		borderWidth: 8,
-		borderColor: '#F3F4F6',
+		width: 160,
+		height: 160,
 	},
-	donutTotal: { fontSize: 20, fontWeight: '700', color: '#111827' },
+	donutTotal: { 
+		fontSize: 24, 
+		fontWeight: '700', 
+		color: '#111827',
+		textAlign: 'center',
+	},
 	donutChartEmpty: {
-		width: 100,
-		height: 100,
-		borderRadius: 50,
+		width: 160,
+		height: 160,
+		borderRadius: 80,
 		backgroundColor: '#F3F4F6',
 		alignItems: 'center',
 		justifyContent: 'center',
 		borderWidth: 2,
 		borderColor: '#E5E7EB',
 	},
-	donutEmptyText: { fontSize: 10, color: '#6B7280' },
+	donutEmptyText: { fontSize: 12, color: '#9CA3AF', fontWeight: '500' },
 
 	// Additional Metrics styles
 	metricsGridCompact: {
@@ -1651,5 +1729,33 @@ const styles = StyleSheet.create({
 
 	globalMenuItemTextDisabled: {
 		color: '#9CA3AF',
+	},
+
+	downloadOverlay: {
+		position: 'absolute',
+		top: 0,
+		left: 0,
+		right: 0,
+		bottom: 0,
+		backgroundColor: 'rgba(255,255,255,0.6)',
+		alignItems: 'center',
+		justifyContent: 'center',
+		zIndex: 10000,
+	},
+	downloadOverlayCard: {
+		backgroundColor: '#fff',
+		padding: 16,
+		borderRadius: 12,
+		borderWidth: 1,
+		borderColor: '#E5E7EB',
+		alignItems: 'center',
+		width: 220,
+	},
+	downloadOverlayText: {
+		marginTop: 10,
+		color: '#374151',
+		fontSize: 14,
+		fontWeight: '600',
+		textAlign: 'center',
 	},
 });

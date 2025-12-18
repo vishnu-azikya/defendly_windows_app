@@ -207,7 +207,9 @@ const api = {
   patch: (path, body, options) => request(path, {...options, method: 'PATCH', body}),
   delete: (path, options) => request(path, {...options, method: 'DELETE'}),
   request,
+  buildHeaders,
 };
 
 export default api;
+export { buildHeaders };
 

@@ -4,6 +4,7 @@
 
 #include "AutolinkedNativeModules.g.h"
 #include "ReactPackageProvider.h"
+#include "FileSaveModule.h" // Ensure FileSaveModule is always linked in release builds
 
 using namespace winrt;
 using namespace xaml;

@@ -1,4 +1,4 @@
-import api from './api';
+import api, { buildHeaders } from './api';
 import config from '../constants/config';
 
 const normalizeListResponse = data => {
@@ -85,6 +85,110 @@ const tryGet = async (path, params) => {
       return {ok: false, status: 413, err, needsPagination: true};
     }
     
+    return {ok: false, status: err?.status, err};
+  }
+};
+
+// Helper function to fetch binary data (like PDFs) following the same pattern as tryGet
+const tryGetBinary = async (path, params) => {
+  try {
+    console.log('tryGetBinary called with path:', path, 'params:', params);
+    const fullUrl = buildQuery(path, params);
+    console.log('Full URL being requested:', fullUrl);
+    
+    // Use much longer timeout for PDF downloads (PDF generation can take time)
+    const timeout = 300000; // 5 minutes for PDF generation and download
+    
+    // Build headers using the same method as api module, overriding Accept for PDF
+    // Remove Content-Type for GET requests (we're not sending a body)
+    const headers = await buildHeaders({
+      Accept: 'application/pdf',
+    });
+    // Remove Content-Type header for GET request
+    delete headers['Content-Type'];
+    
+    // Create AbortController for timeout
+    let controller, timeoutId;
+    try {
+      controller = new AbortController();
+      timeoutId = setTimeout(() => {
+        console.warn('PDF download timeout - aborting request');
+        controller.abort();
+      }, timeout);
+    } catch (abortError) {
+      console.warn('AbortController not supported, timeout will not work:', abortError.message);
+      controller = null;
+    }
+    
+    // Make fetch request directly (similar to api.request but for binary)
+    const fetchOptions = {
+      method: 'GET',
+      headers: headers,
+    };
+    if (controller) {
+      fetchOptions.signal = controller.signal;
+    }
+    
+    let response;
+    try {
+      response = await fetch(`${config.API_BASE_URL}${fullUrl}`, fetchOptions);
+      
+      // Clear timeout once we have the response
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+    } catch (fetchError) {
+      // Clear timeout on error
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+      
+      // Handle abort errors specifically
+      if (fetchError.name === 'AbortError' || fetchError.message === 'Aborted') {
+        const error = new Error('PDF download timed out. The report may be too large or the server is taking too long to generate it.');
+        error.status = 408; // Request Timeout
+        error.isTimeout = true;
+        throw error;
+      }
+      throw fetchError;
+    }
+    
+    console.log(`tryGetBinary response received - Status: ${response.status}`);
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      let errorMessage = `Failed to download binary: ${response.status}`;
+      try {
+        const errorJson = JSON.parse(errorText);
+        errorMessage = errorJson.error || errorJson.message || errorMessage;
+      } catch (e) {
+        errorMessage = errorText || errorMessage;
+      }
+      const error = new Error(errorMessage);
+      error.status = response.status;
+      throw error;
+    }
+    
+    // Get the binary data as arrayBuffer (this can also take time for large files)
+    let arrayBuffer;
+    try {
+      arrayBuffer = await response.arrayBuffer();
+    } catch (bufferError) {
+      if (bufferError.name === 'AbortError' || bufferError.message === 'Aborted') {
+        const error = new Error('PDF download timed out while receiving data. The file may be too large.');
+        error.status = 408;
+        error.isTimeout = true;
+        throw error;
+      }
+      throw bufferError;
+    }
+    
+    const binaryData = new Uint8Array(arrayBuffer);
+    
+    console.log('tryGetBinary successful, size:', binaryData.length, 'bytes');
+    return {ok: true, data: binaryData};
+  } catch (err) {
+    console.log('tryGetBinary failed for:', buildQuery(path, params), 'Error:', err.message);
     return {ok: false, status: err?.status, err};
   }
 };
@@ -500,9 +604,9 @@ export function isOrganizationDatasetTooLarge(orgId) {
 }
 
 export async function getScans(page = 1, limit = 10) {
-  // debugger;
+  debugger;
   const r = await tryGet('/api/scans/exe', { page, limit });
-  // debugger;
+  debugger;
   if (!r.ok) {
     return { data: [], pagination: null };
   }
@@ -534,6 +638,29 @@ export async function getScans(page = 1, limit = 10) {
   };
 }
 
+// Function to download PDF report from backend API
+export async function downloadPdfReport(scanId) {
+  if (!scanId) {
+    throw new Error('Scan ID is required');
+  }
+
+  try {
+    console.log(`Downloading PDF report for scan: ${scanId}`);
+    
+    const encoded = encodeURIComponent(scanId);
+    const result = await tryGetBinary(`/api/reports/pdf/${encoded}`);
+    if (!result.ok) {
+      throw result.err || new Error('Failed to download PDF report');
+    }
+    
+    console.log(`PDF downloaded successfully. Size: ${result.data.length} bytes`);
+    return result.data;
+  } catch (error) {
+    console.error('Error downloading PDF report:', error);
+    throw error;
+  }
+}
+
 export default {
   getScansByOrganizationId,
   getScansByOrganizationIdWithPagination,
@@ -546,6 +673,7 @@ export default {
   extractDomain,
   isOrganizationDatasetTooLarge,
   clearRouteCache,
-  getScans
+  getScans,
+  downloadPdfReport
 };
 

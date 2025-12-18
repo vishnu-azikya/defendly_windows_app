@@ -24,7 +24,7 @@ function DashboardScreen({ onNavigate, currentRoute }) {
           <Sidebar onNavigate={onNavigate} currentRoute={currentRoute} />
         </View>
         <View style={styles.contentWrapper}>
-          <Dashboard/>
+          {/* <Dashboard/> */}
         </View>
       </View>
 

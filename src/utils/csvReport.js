@@ -1,4 +1,5 @@
 import { Buffer } from 'buffer';
+import { NativeModules, Platform, Alert } from 'react-native';
 // Lightweight CSV utilities for vulnerability findings export
 
 // Strip HTML tags and common entities
@@ -181,18 +182,87 @@ export const downloadComprehensiveCsvReport = async (csvContent, filename) => {
 
   // React Native / Windows native module path
   try {
-    const { NativeModules, Platform } = require('react-native');
-    const FileSaveModule = NativeModules?.FileSaveModule;
-    if (Platform && Platform.OS === 'windows' && FileSaveModule?.saveFile) {
-      const base64 = Buffer.from(csvContent, 'utf-8').toString('base64');
-      const result = await FileSaveModule.saveFile(base64, csvFilename);
-      return result;
+    // Check if we're in React Native Windows environment
+    if (Platform && Platform.OS === 'windows') {
+      // Use destructuring like reportDownload.js - this is the standard way
+      const { FileSaveModule } = NativeModules;
+
+      // Log available modules for debugging (always log in release to help diagnose)
+      console.log('CSV Download - Available NativeModules:', NativeModules ? Object.keys(NativeModules) : 'null');
+      console.log('CSV Download - FileSaveModule:', FileSaveModule);
+      console.log('CSV Download - FileSaveModule.saveFile:', FileSaveModule?.saveFile);
+
+      try {
+        if (FileSaveModule && FileSaveModule.saveFile) {
+          try {
+            console.log('Attempting to save CSV file using native module...');
+            const base64 = Buffer.from(csvContent, 'utf-8').toString('base64');
+            const result = await FileSaveModule.saveFile(base64, csvFilename);
+
+            // Check if result is an error (prefixed with "ERROR:")
+            if (result && typeof result === 'string' && result.startsWith('ERROR:')) {
+              const errorMsg = result.substring(6); // Remove "ERROR:" prefix
+              if (errorMsg.includes('cancelled')) {
+                console.log('User cancelled file save');
+                return { cancelled: true };
+              }
+              throw new Error(errorMsg);
+            }
+
+            if (result && !result.includes('Error')) {
+              console.log(`CSV file saved successfully to: ${result}`);
+              return { success: true, filePath: result };
+            } else {
+              throw new Error(result || 'Unknown error from native module');
+            }
+          } catch (nativeError) {
+            console.error('Error calling native FileSaveModule:', nativeError);
+            // Show error to user in React Native
+            if (Alert && Alert.alert) {
+              Alert.alert(
+                'Download Failed',
+                `Failed to save CSV file: ${nativeError.message || 'Unknown error'}\n\nPlease ensure the app has file system permissions.`
+              );
+            }
+            throw nativeError;
+          }
+        } else {
+          // Log detailed information about why module is not available
+          console.error('FileSaveModule not available in NativeModules');
+          console.error('NativeModules:', NativeModules);
+          console.error('NativeModules type:', typeof NativeModules);
+          console.error('NativeModules keys:', NativeModules ? Object.keys(NativeModules) : 'null');
+          console.error('FileSaveModule value:', FileSaveModule);
+          console.error('Platform.OS:', Platform?.OS);
+
+          if (Alert && Alert.alert) {
+            Alert.alert(
+              'Download Not Available',
+              'File save functionality is not available. The native module may not be properly registered in the release build.\n\nPlease check:\n1. That FileSaveModule is compiled into the release build\n2. That ReactPackageProvider includes FileSaveModule\n3. Check console logs for more details'
+            );
+          }
+          throw new Error('FileSaveModule native module not available');
+        }
+      } catch (err) {
+        console.error('Error ', err);
+            // Show error to user in React Native
+            if (Alert && Alert.alert) {
+              Alert.alert(
+                'Download Failed',
+                `Err: ${err.message || 'Unknown error'}\n\nPlease ensure the app has file system permissions.`
+              );
+            }
+            throw err;
+      }
+
     }
   } catch (err) {
-    // Not in React Native environment or module missing; fall through to web
+    console.error('CSV download error:', err);
+    // Re-throw to let caller handle it
+    throw err;
   }
 
-  // Web browser fallback
+  // Web browser fallback (should not reach here in React Native)
   if (typeof document !== 'undefined') {
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
     const link = document.createElement("a");
@@ -209,7 +279,7 @@ export const downloadComprehensiveCsvReport = async (csvContent, filename) => {
     }
   }
 
-  console.warn("Download not supported in this environment.");
+  throw new Error("Download not supported in this environment.");
 };
 
 
